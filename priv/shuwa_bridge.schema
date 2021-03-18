@@ -1,0 +1,105 @@
+{mapping, "bridge.appid", "shuwa_bridge.appid", [
+  {datatype, string}
+]}.
+
+{mapping, "bridge.secret", "shuwa_bridge.secret", [
+  {datatype, string}
+]}.
+
+{mapping, "bridge.filter.$name", "shuwa_bridge.filters", [
+  {datatype, string}
+]}.
+
+{translation, "shuwa_bridge.filters", fun(Conf) ->
+  Collectors = cuttlefish_variable:filter_by_prefix("bridge.filter", Conf),
+  lists:map(fun({_, Collector}) -> Collector end, Collectors)
+end}.
+
+
+{mapping, "shuwa.listener.tcp.acceptors", "shuwa_bridge.listeners", [
+  {default, 16},
+  {datatype, integer}
+]}.
+
+{mapping, "shuwa.listener.tcp.max_connections", "shuwa_bridge.listeners", [
+  {default, 1000000},
+  {datatype, integer}
+]}.
+
+{mapping, "shuwa.listener.tcp.max_conn_rate", "shuwa_bridge.listeners", [
+  {datatype, integer}
+]}.
+
+{mapping, "shuwa.listener.tcp.active_n", "shuwa_bridge.listeners", [
+  {default, 100},
+  {datatype, integer}
+]}.
+
+{mapping, "shuwa.listener.tcp.rate_limit", "shuwa_bridge.listeners", [
+  {default, undefined},
+  {datatype, string}
+]}.
+
+{mapping, "shuwa.listener.tcp.backlog", "shuwa_bridge.listeners", [
+  {datatype, integer},
+  {default, 1024}
+]}.
+
+{mapping, "shuwa.listener.tcp.send_timeout", "shuwa_bridge.listeners", [
+  {datatype, {duration, ms}},
+  {default, "15s"}
+]}.
+
+{mapping, "shuwa.listener.tcp.send_timeout_close", "shuwa_bridge.listeners", [
+  {datatype, flag},
+  {default, on}
+]}.
+
+{mapping, "shuwa.listener.tcp.nodelay", "shuwa_bridge.listeners", [
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
+
+{mapping, "shuwa.listener.tcp.reuseaddr", "shuwa_bridge.listeners", [
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
+
+{mapping, "shuwa.listener.tcp.keepalive", "shuwa_bridge.listeners", [
+  {datatype, {enum, [true, false]}},
+  {default, false}
+]}.
+
+{translation, "shuwa_bridge.listeners", fun(Conf) ->
+
+    Filter  = fun(Opts) -> [{K, V} || {K, V} <- Opts, V =/= undefined] end,
+    Atom = fun(undefined) -> undefined; (S) -> list_to_atom(S) end,
+    Ratelimit = fun(undefined) ->
+                    undefined;
+                   (S) ->
+                    list_to_tuple([list_to_integer(Token) || Token <- string:tokens(S, ",")])
+                end,
+
+    LisOpts = fun(Prefix) ->
+                  Filter([{max_connections, cuttlefish:conf_get(Prefix ++ ".max_connections", Conf)},
+                          {acceptors, cuttlefish:conf_get(Prefix ++ ".acceptors", Conf, undefined)},
+                          {max_conn_rate, cuttlefish:conf_get(Prefix ++ ".max_conn_rate", Conf, undefined)},
+                          {active_n, cuttlefish:conf_get(Prefix ++ ".active_n", Conf, undefined)},
+                          {rate_limit, Ratelimit(cuttlefish:conf_get(Prefix ++ ".rate_limit", Conf, undefined))}])
+              end,
+
+    TcpOpts = fun(Prefix) ->
+                  Filter([{backlog, cuttlefish:conf_get(Prefix ++ ".backlog", Conf, undefined)},
+                          {keepalive, cuttlefish:conf_get(Prefix ++ ".keepalive", Conf, false)},
+                          {send_timeout, cuttlefish:conf_get(Prefix ++ ".send_timeout", Conf, undefined)},
+                          {send_timeout_close, cuttlefish:conf_get(Prefix ++ ".send_timeout_close", Conf, undefined)},
+                          {nodelay, cuttlefish:conf_get(Prefix ++ ".nodelay", Conf, true)},
+                          {reuseaddr, cuttlefish:conf_get(Prefix ++ ".reuseaddr", Conf, undefined)}])
+              end,
+
+    TcpListeners = fun(Type, Name) ->
+                       Prefix = string:join(["shuwa", Type, Name], "."),
+                       [{tcp_options, TcpOpts(Prefix)} | LisOpts(Prefix)]
+                   end,
+    lists:flatten([TcpListeners("listener", "tcp")])
+end}.
